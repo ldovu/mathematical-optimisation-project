@@ -1,3 +1,0 @@
-from gurobipy import *
-
-Model ()
