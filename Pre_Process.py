@@ -13,17 +13,12 @@ class Pre_Process:
         self.release_dates = None
         self.processing_times = None
         self.setup_times = None
+
         self.R = None
         self.O = None
+        self.R_as_matrix = None # Just for internal use
 
-        self.A1 = None
-        self.A2 = None
-        self.A3 = None
-        self.A4 = None
-
-        self.X_as = None
-
-        self.xa_counter = None
+        self.arcs = None
 
         self.read_dat(file_path)
         self.compute_greedy_solution()
@@ -31,7 +26,7 @@ class Pre_Process:
         self.set_R()
         self.set_O()
 
-        self.set_As_and_X_as()
+        self.set_As_and_arcs()
 
 
 
@@ -47,23 +42,14 @@ class Pre_Process:
     def get_O(self):
         return self.O
     
-    def get_A1(self):
-        return self.A1
-    
-    def get_A2(self):
-        return self.A2
-    
-    def get_A3(self):
-        return self.A3
-    
-    def get_A4(self):
-        return self.A4
-    
-    def get_X_as(self):
-        return self.X_as
+    def get_arcs(self):
+        return self.arcs
 
 
 
+    # NOTE: This function reads a file .dat with a specific structure (see paper's github in the README.md file
+    # NOTE: The matrices containing the data have an extra column, or row, of "-1" whne needed in
+    #       position 0 in order to have job=job_index
     def read_dat(self, file_path):
 
         with open(file_path, 'r') as file:
@@ -123,6 +109,8 @@ class Pre_Process:
     
 
 
+    # NOTE: This is a greedy algorithm that is needed to find a solution
+    #       to set an upper bound T for the maximimum timespan
     def compute_greedy_solution(self):
 
         self.GS_processed_jobs = [0]
@@ -140,7 +128,7 @@ class Pre_Process:
 
                 job = job_index + 1
 
-                # If the job under evaluation is alredy in the list, continue
+                # If the job-choice under evaluation is alredy in the list, continue
                 if job in self.GS_processed_jobs:
                     continue
 
@@ -149,16 +137,18 @@ class Pre_Process:
                 current_setup = self.setup_times[last_job, job]
 
                 waiting_time = max(current_release - current_time, 0)
+                # The "quality" of a job-choice is determined ignoring the processing time:
+                #   in fact, this time can't be minimized
                 current_cost = waiting_time + current_setup
 
-                # Update the best choice if it's better
+                # Update the best job-choice if it's better than the stored one
                 if current_cost < best_cost:
                     best_cost = current_cost
                     best_job = job
                     current_processing = self.processing_times[job]
                     time_increment = current_cost + current_processing
 
-            # Update the processed jobs with the best one found above
+            # Update the list of jobs that have been processed with the best job that was found
             current_time = current_time + time_increment
             self.GS_time_steps.append(current_time)
             self.GS_processed_jobs.append(best_job)
@@ -167,7 +157,7 @@ class Pre_Process:
 
 
 
-    # Takes the minimum setup time for each column without repeating the row index (excluding -1 values)
+    # Takes the minimum setup time for each job (excluding -1 values)
     def set_setup_bar_times(self):
 
         self.setup_bar_times = [-1]
@@ -178,80 +168,76 @@ class Pre_Process:
 
 
 
-    # NOTE: R[i] is a list of times t that represent the nodes (i, t)
+    # NOTE: R_as_matrix[i] is a list of times t that represent the nodes (i, t)
+    #       While the list R is a flat list of the nodes (i, t)
     def set_R(self):
-        self.R = [[] for _ in range(self.n_jobs+1)]
-        self.R[0].append(-1)
+
+        self.R = []
+
+        self.R_as_matrix = [[] for _ in range(self.n_jobs+1)]
+        self.R_as_matrix[0].append(-1)
 
         for job in range(1, self.n_jobs+1):
             for t in range((self.setup_bar_times[job] + self.release_dates[job] + self.processing_times[job]), self.T+1):
-                self.R[job].append(t)
+                self.R_as_matrix[job].append(t)
+                self.R.append((job, t))
 
 
 
-    # NOTE: O is a list of times t that represent the nodes (0, t)
+    # NOTE: O is a list of nodes (0, t)
     def set_O(self):
-        self.O = [t for t in range(self.T+1)]
+        self.O = [(0, t) for t in range(self.T+1)]
 
 
 
-    # NOTE: A1[i][j] is a list of tuples (xa_index, t1, t2) that represent the arcs (i, t1)->(j, t2)
-    #           where xa_index is the index in the vector of decision variables X_as
-    #       In this case: t2 = t1 + s_ij + p_j
+    # NOTE: We compute A1, saving the results in the list self.arcs with the structure:
+    #            self.arcs[0]="A1"
+    #            self.arcs[1]="i"
+    #            self.arcs[2]="t"
+    #            self.arcs[3]="j"
+    #            self.arcs[4]="t + s_ij + p_j"
+    #       where (i, t) and (j, t + s_ij + p_j) are nodes of R
     def set_A1(self):
 
-        self.A1 = [[[] for _ in range(self.n_jobs+1)]
-                   for _ in range(self.n_jobs+1)]
-
-        # Fill the first row and first column with -1
-        for j in range(self.n_jobs+1):
-            self.A1[0][j].append(-1)
-            if j != 0:
-                self.A1[j][0].append(-1)
-
-        # For each couple of jobs (i, j), without job 0, compute all arcs of type
-        # (i, t) -> (j, t + s_ij + p_j)
+        # For each couple of jobs (i, j), excluding the dummy job 0, compute all arcs of type:
+        #   (i, t) -> (j, t + s_ij + p_j)
         for job_i in range(1, self.n_jobs+1):
             for job_j in range(1, self.n_jobs+1):
 
-                # Skip i==j
+                # Skip if i==j
                 if job_i == job_j:
-                    self.A1[job_i][job_j].append(-1)
                     continue
 
                 else:
                     # time_span = s_ij + p_j
                     time_span = self.setup_times[job_i][job_j] + \
                         self.processing_times[job_j]
-                    # Get the smaller t from the node (job_i, t)
-                    first_time_i = self.R[job_i][0]
+                    # Get the smallest t from the set of nodes of type: (job_i, t)
+                    first_time_i = self.R_as_matrix[job_i][0]
 
-                    # Get the smaller t from the arcs (job_i, t) -> (job_j, t+time_span)
+                    # Get the smallest t from the set of arcs of type: (job_i, t) -> (job_j, t+time_span)
                     release_date_j = self.release_dates[job_j]
                     initial_time = max(first_time_i, release_date_j)
-                    # Get the largest t from the same arcs (job_i, t) -> (job_j, t+time_span)
+                    # Get the largest t from the set of arcs of type: (job_i, t) -> (job_j, t+time_span)
                     final_time = self.T - time_span
 
                     # Define all the arcs in the computed range
-                    for k,time in enumerate(range(initial_time, final_time+1)):
-                        xa_index = self.get_and_increment_current_ax_index()
-                        self.A1[job_i][job_j].append(
-                            tuple([xa_index, time, time+time_span]))
-                        self.X_as.append(tuple(["A1", job_i, job_j, k]))
+                    for time in range(initial_time, final_time+1):
+                        self.arcs.append(tuple(["A1", job_i, time, job_j, time+time_span]))
 
 
 
-    # NOTE: A2[i] is a list of tuples (xa_index, t1, t2) that represent the arcs (0, t1)->(i, t2)
-    #           where xa_index is the index in the vector of decision variables X_as
-    #       In this case: t2 = t1 + s_0j + p_j
+    # NOTE: We compute A2, saving the results in the list self.arcs with the structure:
+    #            self.arcs[0]="A2"
+    #            self.arcs[1]="0"
+    #            self.arcs[2]="t"
+    #            self.arcs[3]="j"
+    #            self.arcs[4]="t + s_oj + pj"
+    #       where (0, t) is a node of O and (j, t + s_oj + pj) is a node of R
     def set_A2(self):
 
-        self.A2 = [[] for _ in range(self.n_jobs+1)]
-        # Fill the first row and first column with [-1]
-        self.A2[0].append(-1)
-
-        # For each job j (no 0) compute all the arcs of type
-        # (0, t) -> (j -> t + s_oj + pj) with the constraint t>=r_j
+        # For each job j, excluding the dummy job 0, compute all the arcs of type:
+        #   (0, t) -> (j -> t + s_oj + pj) with the constraint t>=r_j
         for job in range(1, self.n_jobs+1):
 
             # time_span = s_oj + pj
@@ -259,90 +245,75 @@ class Pre_Process:
 
             # Get the smaller t from the arcs (0, t) -> (job, t+time_span)
             release_date_j = self.release_dates[job]
-            # Actually not needed, we leave it like that for uniformity with the code of A1
-            initial_time = max(0, release_date_j)
+            initial_time = max(0, release_date_j) # Not needed, we let it uniformity with the code of A1
 
-            # Get the largest t from the same arcs (0, t) -> (job, t+time_span)
+            # Get the largest t from the set of arcs of type: (0, t) -> (job, t+time_span)
             final_time = self.T - time_span
 
             # Define all the arcs in the computed range
-            for k,time in enumerate(range(initial_time, final_time+1)):
-                xa_index = self.get_and_increment_current_ax_index()
-                self.A2[job].append(tuple([xa_index, time, time+time_span]))
-                self.X_as.append(tuple(["A2", job, k]))
+            for time in range(initial_time, final_time+1):
+                self.arcs.append(tuple(["A2", 0, time, job, time+time_span]))
 
 
 
-    # NOTE: A3[i] is a list of tuples (xa_index, t) that represent the arcs (i, t)->(0, T)
-    #           where xa_index is the index in the vector of decision variables X_as
+    # NOTE: We compute A3, saving the results in the list self.arcs with the structure:
+    #            self.arcs[0]="A3"
+    #            self.arcs[1]="i"
+    #            self.arcs[2]="t"
+    #            self.arcs[3]="0"
+    #            self.arcs[4]="T"
+    #       where (i, t) is a node of R (and (0, T) is a node of O)
     def set_A3(self):
 
-        self.A3 = [[] for _ in range(self.n_jobs+1)]
-        # Fill the first row and first column with [-1]
-        self.A3[0].append(-1)
-
-        # For each job j, create an arc that goes from every node (j, t) to the node (0, T)
-        # NOTE: (0, T) is omitted from the saved data because it would be redundant
+        # For each job j, excluding the dummy job 0, create an arc that goes from every node (j, t) to the node (0, T)
         for job in range(1, self.n_jobs+1):
-            for k,time in enumerate(self.R[job]):
-                xa_index = self.get_and_increment_current_ax_index()
-                self.A3[job].append(tuple([xa_index, time]))
-                self.X_as.append(tuple(["A3", job, k]))
+            for time in self.R_as_matrix[job]:
+                self.arcs.append(tuple(["A3", job, time, 0, self.T]))
 
 
 
-    # NOTE: A4[i] is a list of tuples (xa_index, t1, t2) that represent the arcs (i, t1)->(i, t2)
-    #           where xa_index is the index in the vector of decision variables X_as
-    #       In this case: t2 = t1 + 1
-    # NOTE: In this case we consider also the dummy job (0)
+    # NOTE: We compute A4 saving, the results in the list self.arcs with the structure:
+    #            self.arcs[0]="A4"
+    #            self.arcs[1]="i"
+    #            self.arcs[2]="t"
+    #            self.arcs[3]="i"
+    #            self.arcs[4]="t+1"
+    #       where (i, t) and (i, t+1) are nodes of V = R U O
     def set_A4(self):
 
-        self.A4 = [[] for _ in range(self.n_jobs+1)]
-
-        # First create all the arcs of type (0, t) -> (0, t+1)
-        for k,time in enumerate(self.O):
+        # First create all the arcs of the dummy job 0, i.e., the arcs of type (0, t) -> (0, t+1)
+        for node in self.O:
+            time = node[1]
             if time >= self.T:
                 break
             else:
-                next_time = self.O[time+1]
+                next_time = self.O[time+1][1]
                 if time+1 != next_time:
                     print(time, next_time)
                     raise Exception("Error in the parsing of matrix O")
                 else:
-                    xa_index = self.get_and_increment_current_ax_index()
-                    self.A4[0].append(tuple([xa_index, time, next_time]))
-                    self.X_as.append(tuple(["A4", 0, k]))
+                    self.arcs.append(tuple(["A4", 0, time, 0, time+1]))
 
-        # Then for each job j create all the arcs of type (j, t) -> (j, t+1)
+        # Then, for each job j, excluding the dummy job 0, create all the arcs of type (j, t) -> (j, t+1)
         for job in range(1, self.n_jobs+1):
             # Fixed the job, create all the arcs, starting from (j, s_bar_j + r_j + p_j)
             # Where, s_bar_j + r_j + p_j is the time stored in position 0 of the list R[job]
-            for k,time in enumerate(self.R[job]):
+            for index,time in enumerate(self.R_as_matrix[job]):
                 if time >= self.T:
                     break
                 else:
-                    next_time = self.R[job][k+1]
+                    next_time = self.R_as_matrix[job][index+1]
                     # Check if the list R[job] is correctly ordered
                     if time+1 != next_time:
                         print(time, next_time)
                         raise Exception("Error in the parsing of matrix R")
                     else:
-                        xa_index = self.get_and_increment_current_ax_index()
-                        self.A4[job].append(tuple([xa_index, time, time+1]))
-                        self.X_as.append(tuple(["A4", job, k]))
+                        self.arcs.append(tuple(["A4", job, time, job, time+1]))
 
 
 
-    def get_and_increment_current_ax_index(self):
-        current_index = self.xa_counter
-        self.xa_counter = self.xa_counter + 1
-        return current_index
-
-
-
-    def set_As_and_X_as(self):
-        self.X_as = []
-        self.xa_counter = 0
+    def set_As_and_arcs(self):
+        self.arcs = []
 
         self.set_A1()
         self.set_A2()
