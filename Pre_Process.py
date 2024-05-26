@@ -31,7 +31,12 @@ class Pre_Process:
         self.set_A3()
         self.set_A4()
 
+    def get_n_jobs(self):
+        return self.n_jobs
     
+    def get_T(self):
+        return self.T
+
     def get_R(self):
         return self.R
     
