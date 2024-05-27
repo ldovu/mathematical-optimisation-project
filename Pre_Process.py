@@ -19,6 +19,11 @@ class Pre_Process:
         self.R_as_matrix = None # Just for internal use
 
         self.arcs = None
+        self.range_arcs = None
+        self.range_A1 = None
+        self.range_A2 = None
+        self.range_A3 = None
+        self.range_A4 = None
 
         self.read_dat(file_path)
         self.compute_greedy_solution()
@@ -198,7 +203,7 @@ class Pre_Process:
     #            self.arcs[4]="t + s_ij + p_j"
     #       where (i, t) and (j, t + s_ij + p_j) are nodes of R
     def set_A1(self):
-
+        arcs_counter = 0
         # For each couple of jobs (i, j), excluding the dummy job 0, compute all arcs of type:
         #   (i, t) -> (j, t + s_ij + p_j)
         for job_i in range(1, self.n_jobs+1):
@@ -224,6 +229,9 @@ class Pre_Process:
                     # Define all the arcs in the computed range
                     for time in range(initial_time, final_time+1):
                         self.arcs.append(tuple(["A1", job_i, time, job_j, time+time_span]))
+                        arcs_counter = arcs_counter + 1
+        
+        return arcs_counter
 
 
 
@@ -235,7 +243,7 @@ class Pre_Process:
     #            self.arcs[4]="t + s_oj + pj"
     #       where (0, t) is a node of O and (j, t + s_oj + pj) is a node of R
     def set_A2(self):
-
+        arcs_counter = 0
         # For each job j, excluding the dummy job 0, compute all the arcs of type:
         #   (0, t) -> (j -> t + s_oj + pj) with the constraint t>=r_j
         for job in range(1, self.n_jobs+1):
@@ -253,7 +261,9 @@ class Pre_Process:
             # Define all the arcs in the computed range
             for time in range(initial_time, final_time+1):
                 self.arcs.append(tuple(["A2", 0, time, job, time+time_span]))
-
+                arcs_counter = arcs_counter + 1
+        
+        return arcs_counter
 
 
     # NOTE: We compute A3, saving the results in the list self.arcs with the structure:
@@ -264,11 +274,14 @@ class Pre_Process:
     #            self.arcs[4]="T"
     #       where (i, t) is a node of R (and (0, T) is a node of O)
     def set_A3(self):
-
+        arcs_counter = 0
         # For each job j, excluding the dummy job 0, create an arc that goes from every node (j, t) to the node (0, T)
         for job in range(1, self.n_jobs+1):
             for time in self.R_as_matrix[job]:
                 self.arcs.append(tuple(["A3", job, time, 0, self.T]))
+                arcs_counter = arcs_counter + 1
+
+        return arcs_counter
 
 
 
@@ -280,6 +293,7 @@ class Pre_Process:
     #            self.arcs[4]="t+1"
     #       where (i, t) and (i, t+1) are nodes of V = R U O
     def set_A4(self):
+        arcs_counter = 0
 
         # First create all the arcs of the dummy job 0, i.e., the arcs of type (0, t) -> (0, t+1)
         for node in self.O:
@@ -293,6 +307,7 @@ class Pre_Process:
                     raise Exception("Error in the parsing of matrix O")
                 else:
                     self.arcs.append(tuple(["A4", 0, time, 0, time+1]))
+                    arcs_counter = arcs_counter + 1
 
         # Then, for each job j, excluding the dummy job 0, create all the arcs of type (j, t) -> (j, t+1)
         for job in range(1, self.n_jobs+1):
@@ -309,13 +324,27 @@ class Pre_Process:
                         raise Exception("Error in the parsing of matrix R")
                     else:
                         self.arcs.append(tuple(["A4", job, time, job, time+1]))
+                        arcs_counter = arcs_counter + 1
+
+        return arcs_counter
 
 
 
     def set_As_and_arcs(self):
         self.arcs = []
 
-        self.set_A1()
-        self.set_A2()
-        self.set_A3()
-        self.set_A4()
+        n_arcs_A1 = self.set_A1()
+        n_arcs_A2 = self.set_A2()
+        n_arcs_A3 = self.set_A3()
+        n_arcs_A4 = self.set_A4()
+
+        t = 0
+        self.range_A1 = range(t, n_arcs_A1)
+        t = t + n_arcs_A1
+        self.range_A2 = range(t, t+n_arcs_A2)
+        t = t + n_arcs_A2
+        self.range_A3 = range(t, t+n_arcs_A3)
+        t = t + n_arcs_A3
+        self.range_A4 = range(t, t+n_arcs_A4)
+        t = t + n_arcs_A4
+        self.range_arcs = range(0, t)
