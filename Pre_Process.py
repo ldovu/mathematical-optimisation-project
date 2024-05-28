@@ -1,4 +1,5 @@
 import numpy as np
+import math
 
 # NOTE: The matrices containing the data have an extra columns of "-1" in
 #       position 0 in order to have job=job_index
