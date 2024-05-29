@@ -81,8 +81,8 @@ class Pre_Process:
 
                 if i >= 2 and i < 2+self.n_jobs:
                     if line_length != 4:
-                        raise Exception(f"Something is wrong with the {
-                                        file_path} file format: Error {1}")
+                        raise Exception(f"""Something is wrong with the {
+                                        file_path} file format: Error {1}""")
                     job = elements[0]
 
                     self.release_dates[job] = elements[1]
@@ -92,8 +92,8 @@ class Pre_Process:
                 if i >= 2+self.n_jobs:
 
                     if line_length != self.n_jobs:
-                        raise Exception(f"Something is wrong with the {
-                                        file_path} file format: Error {2}")
+                        raise Exception(f"""Something is wrong with the {
+                                        file_path} file format: Error {2}""")
 
                     setup_matrix_rows = setup_matrix_rows + 1
 
@@ -110,8 +110,8 @@ class Pre_Process:
                             self.setup_times[row_index, job] = element
 
             if setup_matrix_rows != self.n_jobs+1:
-                raise Exception(f"Something is wrong with the {
-                                file_path} file format: Error {3}")
+                raise Exception(f"""Something is wrong with the {
+                                file_path} file format: Error {3}""")
     
 
 
