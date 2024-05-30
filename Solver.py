@@ -56,9 +56,12 @@ class Solver:
 
         print("Defining costraint 3...")
         # Constraint 3
+        i = 0
         for node in self.data.O[1:-1] + self.data.R: # self.data.O[1:-1] skips first element (0, 0) and last element (0, T)
             job = node[0]
             time = node[1]
+            i = i + 1
+            print(f"Defining costraint 3 for node {i}...")
             model.addConstr(
                 gb.quicksum(
                     self.X_as[a]

@@ -57,61 +57,73 @@ class Pre_Process:
     # NOTE: The matrices containing the data have an extra column, or row, of "-1" whne needed in
     #       position 0 in order to have job=job_index
     def read_dat(self, file_path):
+        
+        if file_path.endswith(".dat"):
+            with open(file_path, 'r') as file:
+                first_line = file.readline().replace("\n", "")
+                first_elements = [int(x) for x in first_line.split(" ") if x]
+                self.n_jobs = first_elements[0]
 
-        with open(file_path, 'r') as file:
+                # NOTE: The matrices containing the data have an extra columns of "-1" in
+                #       position 0 in order to have job=job_index
+                self.release_dates = np.full(self.n_jobs+1, -1)
+                self.processing_times = np.full(self.n_jobs+1, -1)
+                self.setup_times = np.full([self.n_jobs+1, self.n_jobs+1], -1, dtype=int)
 
-            first_line = file.readline().replace("\n", "")
-            first_elements = [int(x) for x in first_line.split(" ") if x]
-            self.n_jobs = first_elements[0]
+                setup_matrix_rows = 0
 
-            # NOTE: The matrices containing the data have an extra columns of "-1" in
-            #       position 0 in order to have job=job_index
-            self.release_dates = np.full(self.n_jobs+1, -1)
-            self.processing_times = np.full(self.n_jobs+1, -1)
-            self.setup_times = np.full([self.n_jobs+1, self.n_jobs+1], -1, dtype=int)
+                for i, line in enumerate(file):
 
-            setup_matrix_rows = 0
+                    line = line.replace("\n", "")
+                    elements = [int(x) for x in line.split(" ") if x]
 
-            for i, line in enumerate(file):
+                    line_length = len(elements)
 
-                line = line.replace("\n", "")
-                elements = [int(x) for x in line.split(" ") if x]
+                    if i >= 2 and i < 2+self.n_jobs:
+                        if line_length != 4:
+                            raise Exception(f"""Something is wrong with the {
+                                            file_path} file format: Error {1}""")
+                        job = elements[0]
 
-                line_length = len(elements)
+                        self.release_dates[job] = elements[1]
+                        self.processing_times[job] = elements[2]
+                        continue
 
-                if i >= 2 and i < 2+self.n_jobs:
-                    if line_length != 4:
-                        raise Exception(f"""Something is wrong with the {
-                                        file_path} file format: Error {1}""")
-                    job = elements[0]
+                    if i >= 2+self.n_jobs:
 
-                    self.release_dates[job] = elements[1]
-                    self.processing_times[job] = elements[2]
-                    continue
+                        if line_length != self.n_jobs:
+                            raise Exception(f"""Something is wrong with the {
+                                            file_path} file format: Error {2}""")
 
-                if i >= 2+self.n_jobs:
+                        setup_matrix_rows = setup_matrix_rows + 1
 
-                    if line_length != self.n_jobs:
-                        raise Exception(f"""Something is wrong with the {
-                                        file_path} file format: Error {2}""")
+                        row_index = setup_matrix_rows - 1
 
-                    setup_matrix_rows = setup_matrix_rows + 1
+                        for column_index, element in enumerate(elements):
 
-                    row_index = setup_matrix_rows - 1
+                            job = column_index + 1
+                            # Ignore setup times between a job and its self
+                            if job == row_index:
+                                continue
 
-                    for column_index, element in enumerate(elements):
+                            else:
+                                self.setup_times[row_index, job] = element
 
-                        job = column_index + 1
-                        # Ignore setup times between a job and its self
-                        if job == row_index:
-                            continue
-
-                        else:
-                            self.setup_times[row_index, job] = element
-
-            if setup_matrix_rows != self.n_jobs+1:
+                if setup_matrix_rows != self.n_jobs+1:
+                    raise Exception(f"""Something is wrong with the {
+                                    file_path} file format: Error {3}""")
+            
+        else:
+            try:
+                self.n_jobs = int(file_path.split("/")[-1].split("n")[0])
+                folder_file_path = "GeneratedIstances/" + file_path
+                self.release_dates = np.loadtxt(folder_file_path + "/release_dates.csv", delimiter=",", dtype=int)
+                self.processing_times = np.loadtxt(folder_file_path + "/processing_times.csv", delimiter=",", dtype=int)
+                self.setup_times = np.loadtxt(folder_file_path + "/setup_times.csv", delimiter=",", dtype=int)
+            except:
                 raise Exception(f"""Something is wrong with the {
-                                file_path} file format: Error {3}""")
+                                folder_file_path} file format: Error {4}""")
+
     
 
 
